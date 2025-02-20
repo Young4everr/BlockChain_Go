@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/gob"
+	"fmt"
+	"log"
 	"time"
 )
 
@@ -91,4 +94,33 @@ func (block *Block) SetHash() {
 
 	hash /*[32]byte*/ := sha256.Sum256(data)
 	block.Hash = hash[:]
+}
+
+// 序列化，将区块转换成字节流
+func (block *Block) Serialize() []byte {
+
+	var buffer bytes.Buffer
+	// 创建编码器
+	encoder := gob.NewEncoder(&buffer)
+	err := encoder.Encode(block)
+	if err != nil {
+		log.Panic("编码出错!")
+	}
+
+	return buffer.Bytes()
+}
+
+// 反序列化
+func DeSerialize(data []byte) *Block {
+	fmt.Printf("解码传入数据为：%x\n", data)
+
+	var block Block
+	// 创建解码器
+	decoder := gob.NewDecoder(bytes.NewReader(data))
+	err := decoder.Decode(&block)
+	if err != nil {
+		log.Panic("解码出错！")
+	}
+
+	return &block
 }
