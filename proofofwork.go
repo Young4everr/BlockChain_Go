@@ -87,7 +87,6 @@ func (pow *ProofOfWork) PrepareData(nonce uint64) []byte {
 		UintToByte(block.TimeStamp),
 		UintToByte(block.Difficulty),
 		UintToByte(nonce),
-		block.Data,
 	}
 
 	data := bytes.Join(tmp, []byte{})

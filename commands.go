@@ -7,8 +7,8 @@ import (
 )
 
 // 添加区块
-func (cli *CLI) addBlock(data string) {
-	cli.bc.AddBlock(data)
+func (cli *CLI) addBlock(txs []*Transaction) {
+	cli.bc.AddBlock(txs)
 }
 
 // 打印区块
@@ -26,7 +26,7 @@ func (cli *CLI) printBlock() {
 
 		fmt.Printf("Difficulty : %d\n", block.Difficulty)
 		fmt.Printf("Nonce : %d\n", block.Nonce)
-		fmt.Printf("Data : %s\n", block.Data)
+		// fmt.Printf("Data : %s\n", block.Transactions[0].TXid)
 		fmt.Printf("Hash : %x\n", block.Hash)
 
 		pow := NewProofOfWork(block)

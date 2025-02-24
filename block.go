@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/gob"
-	"fmt"
 	"log"
 	"time"
 )
@@ -34,13 +33,28 @@ type Block struct {
 
 	Nonce uint64 //随机数，挖矿找的就是它
 
-	Data []byte //数据，目前使用字节流，v4开始使用交易代替
+	// Data []byte //数据，目前使用字节流，v4开始使用交易代替
+	Transactions []*Transaction
 
 	Hash []byte //当前区块哈希，区块中不存在的字段，为了方便我们添加进来
 }
 
+// 计算梅克尔根
+func (block *Block) HashTransactions() {
+
+	var hashes []byte
+
+	for _, tx := range block.Transactions {
+		txid := tx.TXid
+		hashes = append(hashes, txid...)
+	}
+
+	hash := sha256.Sum256(hashes)
+	block.MerKleRoot = hash[:]
+}
+
 // 创建区块，对Block的每个字段填充数据即可
-func NewBlock(data string, preBlockHash []byte) *Block {
+func NewBlock(txs []*Transaction, preBlockHash []byte) *Block {
 	block := Block{
 		Version: 00,
 
@@ -54,10 +68,13 @@ func NewBlock(data string, preBlockHash []byte) *Block {
 
 		// Nonce: 10, //同Difficulty
 
-		Data: []byte(data),
+		// Data: []byte(data),
+		Transactions: txs,
 
 		Hash: []byte{}, //先填充为空，后续会填充数据
 	}
+
+	block.HashTransactions()
 
 	// block.SetHash()
 	pow := NewProofOfWork(&block)
@@ -70,31 +87,31 @@ func NewBlock(data string, preBlockHash []byte) *Block {
 }
 
 // 为了生成区块哈希，我们实现一个简单的函数，来计算哈希值，没有难度值
-func (block *Block) SetHash() {
-	// var data []byte
-	// data = append(data, UintToByte(block.Version)...)
-	// data = append(data, block.PreBlockHash...)
-	// data = append(data, block.MerKleRoot...)
-	// data = append(data, UintToByte(block.TimeStamp)...)
-	// data = append(data, UintToByte(block.Difficulty)...)
-	// data = append(data, UintToByte(block.Nonce)...)
-	// data = append(data, block.Data...)
+// func (block *Block) SetHash() {
+// 	// var data []byte
+// 	// data = append(data, UintToByte(block.Version)...)
+// 	// data = append(data, block.PreBlockHash...)
+// 	// data = append(data, block.MerKleRoot...)
+// 	// data = append(data, UintToByte(block.TimeStamp)...)
+// 	// data = append(data, UintToByte(block.Difficulty)...)
+// 	// data = append(data, UintToByte(block.Nonce)...)
+// 	// data = append(data, block.Data...)
 
-	tmp := [][]byte{
-		UintToByte(block.Version),
-		block.PreBlockHash,
-		block.MerKleRoot,
-		UintToByte(block.TimeStamp),
-		UintToByte(block.Difficulty),
-		UintToByte(block.Nonce),
-		block.Data,
-	}
+// 	tmp := [][]byte{
+// 		UintToByte(block.Version),
+// 		block.PreBlockHash,
+// 		block.MerKleRoot,
+// 		UintToByte(block.TimeStamp),
+// 		UintToByte(block.Difficulty),
+// 		UintToByte(block.Nonce),
+// 		block.Data,
+// 	}
 
-	data := bytes.Join(tmp, []byte{})
+// 	data := bytes.Join(tmp, []byte{})
 
-	hash /*[32]byte*/ := sha256.Sum256(data)
-	block.Hash = hash[:]
-}
+// 	hash /*[32]byte*/ := sha256.Sum256(data)
+// 	block.Hash = hash[:]
+// }
 
 // 序列化，将区块转换成字节流
 func (block *Block) Serialize() []byte {
@@ -112,7 +129,7 @@ func (block *Block) Serialize() []byte {
 
 // 反序列化
 func DeSerialize(data []byte) *Block {
-	fmt.Printf("解码传入数据为：%x\n", data)
+	// fmt.Printf("解码传入数据为：%x\n", data)
 
 	var block Block
 	// 创建解码器
