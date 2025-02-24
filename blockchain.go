@@ -1,10 +1,11 @@
 package main
 
 import (
-	"blockchain/bolt"
 	"fmt"
 	"log"
 	"os"
+
+	"github.com/boltdb/bolt"
 )
 
 // v1-创建区块链，使用Block数组模拟

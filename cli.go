@@ -15,6 +15,7 @@ const Usage = `
 	./blockchain printBlock
 	./blockchain getBalance 地址
 	./blockchain send FROM TO AMOUNT MINER DATA "转账命令"
+	./blockchain createWallet "创建钱包"
 `
 
 func (cli *CLI) Run() {
@@ -61,6 +62,10 @@ func (cli *CLI) Run() {
 		miner := cmds[5]
 		data := cmds[6]
 		cli.Send(from, to, amount, miner, data)
+
+	case "createWallet":
+		fmt.Printf("创建钱包命令被调用\n")
+		cli.CreateWallet()
 
 	default:
 		fmt.Printf("无效命令，请检查！")
