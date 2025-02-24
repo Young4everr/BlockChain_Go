@@ -25,7 +25,12 @@ const blockBucketName = "blockBucket"
 const lastHashKey = "lastHashKey"
 
 // 实现创建区块链的方法
-func NewBlockChain(miner string) *BlockChain {
+func CraeteBlockChain(miner string) *BlockChain {
+	if IsFileExist(blockChainName) {
+		fmt.Printf("区块链已存在，无需重复创建！")
+		return nil
+	}
+
 	// v1
 	// genesisBlock := NewBlock(genesisInfo, []byte{0x0000000000000000})
 	// bc := BlockChain{Blocks: []*Block{genesisBlock}}
@@ -42,30 +47,58 @@ func NewBlockChain(miner string) *BlockChain {
 	var tail []byte
 
 	db.Update(func(tx *bolt.Tx) error {
+
+		b, err := tx.CreateBucket([]byte(blockBucketName))
+		if err != nil {
+			log.Panic(err)
+		}
+
+		// bucket创建完成，开始添加创世区块
+		// 创世快中只有一个挖矿交易
+		coinbase := NewCoinbaseTx(miner, genesisInfo)
+		genesisBlock := NewBlock([]*Transaction{coinbase}, []byte{})
+		b.Put(genesisBlock.Hash, genesisBlock.Serialize() /*将区块序列化转化为字节流*/)
+		b.Put([]byte(lastHashKey), []byte(genesisBlock.Hash))
+
+		tail = genesisBlock.Hash
+
+		return nil
+	})
+
+	return &BlockChain{db, tail}
+}
+
+// 实现获取区块链实例
+func NewBlockChain() *BlockChain {
+	if !IsFileExist(blockChainName) {
+		fmt.Printf("区块链不存在，请先创建！")
+		return nil
+	}
+
+	// v1
+	// genesisBlock := NewBlock(genesisInfo, []byte{0x0000000000000000})
+	// bc := BlockChain{Blocks: []*Block{genesisBlock}}
+	// return &bc
+
+	// v2 - 添加bolt存储区块
+	// 功能分析
+	// 1. 获得数据库句柄，打开数据库，读写数据
+	db, err := bolt.Open(blockChainName, 0600, nil)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	var tail []byte
+
+	db.View(func(tx *bolt.Tx) error {
 		// 获取桶(其实就是链)
 		b := tx.Bucket([]byte(blockBucketName))
 		// 当桶不存在时，创建桶，并添加创世区块
 		if b == nil {
-			b, err = tx.CreateBucket([]byte(blockBucketName))
-			if err != nil {
-				log.Panic(err)
-			}
-
-			// bucket创建完成，开始添加创世区块
-			// 创世快中只有一个挖矿交易
-			coinbase := NewCoinbaseTx(miner, genesisInfo)
-			genesisBlock := NewBlock([]*Transaction{coinbase}, []byte{})
-			b.Put(genesisBlock.Hash, genesisBlock.Serialize() /*将区块序列化转化为字节流*/)
-			b.Put([]byte(lastHashKey), []byte(genesisBlock.Hash))
-
-			// Test
-			// block := b.Get(genesisBlock.Hash)
-			// fmt.Printf("block: %s\n", block)
-
-			tail = genesisBlock.Hash
-		} else {
-			tail = b.Get([]byte(lastHashKey))
+			fmt.Printf("区块链bucket为空，请检查！\n")
+			os.Exit(1)
 		}
+		tail = b.Get([]byte(lastHashKey))
 
 		return nil
 	})
@@ -142,14 +175,21 @@ func (it *BlockChainIterator) Next() *Block {
 	return &block
 }
 
+// 定义UTXOInfo结构
+type UTXOInfo struct {
+	TXID   []byte   // 交易id
+	Index  int64    // output的索引值
+	Output TXOutput // output本身
+}
+
 // 查询我的比特币余额
 // // 1. 遍历账本
 // // 2. 遍历交易
 // // 3. 遍历output
 // 4. 找到属于我的output
-func (bc *BlockChain) FindMyUtxos(address string) []TXOutput {
+func (bc *BlockChain) FindMyUtxos(address string) []UTXOInfo {
 	fmt.Printf("FindMyUtxos\n")
-	var UTXOs []TXOutput
+	var UTXOInfos []UTXOInfo
 
 	it := bc.NewIterator()
 
@@ -162,19 +202,21 @@ func (bc *BlockChain) FindMyUtxos(address string) []TXOutput {
 
 		// 遍历交易
 		for _, tx := range block.Transactions {
-			// 遍历交易输入
-			for _, input := range tx.TXInputs {
-				if input.Address == address {
-					fmt.Printf("找到消耗过的output! index : %d\n", input.Index)
-					spentUTXO[string(input.TXID)] = append(spentUTXO[string(input.TXID)], input.Index)
+			if !tx.IsCoinbase() {
+				// 遍历交易输入
+				for _, input := range tx.TXInputs {
+					if input.Address == address {
+						fmt.Printf("找到消耗过的output! index : %d\n", input.Index)
+						spentUTXO[string(input.TXID)] = append(spentUTXO[string(input.TXID)], input.Index)
+					}
 				}
 			}
 
 		OUTPUT:
 			// 遍历output
 			for i, output := range tx.TXOutputs {
-				key := string(tx.TXid)
-				indexes := spentUTXO[key]
+				key := tx.TXid
+				indexes := spentUTXO[string(key)]
 				if len(indexes) != 0 {
 					fmt.Printf("当前这笔交易中有被消耗过的output!")
 					for _, j := range indexes {
@@ -187,7 +229,8 @@ func (bc *BlockChain) FindMyUtxos(address string) []TXOutput {
 				// 找到属于我的所有output
 				if address == output.Address {
 					fmt.Printf("找到属于 %s 的output, i : %d\n", address, i)
-					UTXOs = append(UTXOs, output)
+					utxoinfo := UTXOInfo{tx.TXid, int64(i), output}
+					UTXOInfos = append(UTXOInfos, utxoinfo)
 				}
 			}
 		}
@@ -198,17 +241,17 @@ func (bc *BlockChain) FindMyUtxos(address string) []TXOutput {
 		}
 	}
 
-	return UTXOs
+	return UTXOInfos
 }
 
 func (bc *BlockChain) GetMyBalance(address string) {
 
-	utxos := bc.FindMyUtxos(address)
+	utxoinfos := bc.FindMyUtxos(address)
 
 	var total = 0.0
 
-	for _, utxo := range utxos {
-		total += utxo.Value
+	for _, utxoinfo := range utxoinfos {
+		total += utxoinfo.Output.Value
 	}
 	fmt.Printf("%s 的余额是：%f", address, total)
 }
@@ -219,54 +262,13 @@ func (bc *BlockChain) FindNeedUtxos(from string, amount float64) (map[string][]i
 	needUtxos := make(map[string][]int64)
 	var resValue float64
 
-	// 找到合理的utxo
-	it := bc.NewIterator()
-
-	spentUTXO := make(map[string][]int64)
-
-	// 遍历账本
-	for {
-		block := it.Next()
-
-		// 遍历交易
-		for _, tx := range block.Transactions {
-			// 遍历inputs
-			for i, input := range tx.TXInputs {
-				if input.Address == from {
-					fmt.Printf("找到消耗过的output! index : %d\n", input.Index)
-					spentUTXO[string(input.TXID)] = append(spentUTXO[string(input.TXID)], int64(i))
-				}
-			}
-
-		OUTPUT:
-			// 遍历output，找到合适的utxo
-			for i, output := range tx.TXOutputs {
-				key := tx.TXid
-				if len(spentUTXO[string(key)]) != 0 {
-					fmt.Printf("当前这笔交易中有被消耗过的output!\n")
-					for _, index := range spentUTXO[string(key)] {
-						if index == int64(i) {
-							continue OUTPUT
-						}
-					}
-				}
-				if from == output.Address {
-					fmt.Printf("找到属于 %s 的output, i : %d\n", from, i)
-					// 添加到返回结构needUtxos
-					needUtxos[string(key)] = append(needUtxos[string(key)], int64(i))
-					resValue += output.Value
-
-					// 判断金额是否足够，如足够则退出
-					if resValue >= amount {
-						return needUtxos, resValue
-					}
-					// 如不足，则继续上述循环
-				}
-			}
-		}
-
-		if len(block.PreBlockHash) == 0 {
-			fmt.Printf("遍历区块链结束！\n")
+	UTXOInfos := bc.FindMyUtxos(from)
+	for _, utxoinfo := range UTXOInfos {
+		key := string(utxoinfo.TXID)
+		needUtxos[key] = append(needUtxos[key], utxoinfo.Index)
+		resValue += utxoinfo.Output.Value
+		// 判断金额是否足够
+		if resValue >= amount {
 			break
 		}
 	}
