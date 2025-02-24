@@ -1,7 +1,7 @@
 package main
 
 func main() {
-	bc := NewBlockChain("The miner")
+	bc := NewBlockChain("miner01")
 	defer bc.db.Close()
 	cli := CLI{bc}
 	cli.Run()

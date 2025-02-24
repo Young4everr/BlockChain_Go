@@ -53,7 +53,7 @@ func NewBlockChain(miner string) *BlockChain {
 
 			// bucket创建完成，开始添加创世区块
 			// 创世快中只有一个挖矿交易
-			coinbase := NewCoinbaseTx(miner)
+			coinbase := NewCoinbaseTx(miner, genesisInfo)
 			genesisBlock := NewBlock([]*Transaction{coinbase}, []byte{})
 			b.Put(genesisBlock.Hash, genesisBlock.Serialize() /*将区块序列化转化为字节流*/)
 			b.Put([]byte(lastHashKey), []byte(genesisBlock.Hash))
@@ -153,12 +153,12 @@ func (bc *BlockChain) FindMyUtxos(address string) []TXOutput {
 
 	it := bc.NewIterator()
 
+	//key是交易id，value是index数组
+	spentUTXO := make(map[string][]int64)
+
 	// 遍历账本
 	for {
 		block := it.Next()
-
-		//key是交易id，value是index数组
-		spentUTXO := make(map[string][]int64)
 
 		// 遍历交易
 		for _, tx := range block.Transactions {
@@ -211,4 +211,65 @@ func (bc *BlockChain) GetMyBalance(address string) {
 		total += utxo.Value
 	}
 	fmt.Printf("%s 的余额是：%f", address, total)
+}
+
+// 查找合理的utxo
+func (bc *BlockChain) FindNeedUtxos(from string, amount float64) (map[string][]int64, float64) {
+
+	needUtxos := make(map[string][]int64)
+	var resValue float64
+
+	// 找到合理的utxo
+	it := bc.NewIterator()
+
+	spentUTXO := make(map[string][]int64)
+
+	// 遍历账本
+	for {
+		block := it.Next()
+
+		// 遍历交易
+		for _, tx := range block.Transactions {
+			// 遍历inputs
+			for i, input := range tx.TXInputs {
+				if input.Address == from {
+					fmt.Printf("找到消耗过的output! index : %d\n", input.Index)
+					spentUTXO[string(input.TXID)] = append(spentUTXO[string(input.TXID)], int64(i))
+				}
+			}
+
+		OUTPUT:
+			// 遍历output，找到合适的utxo
+			for i, output := range tx.TXOutputs {
+				key := tx.TXid
+				if len(spentUTXO[string(key)]) != 0 {
+					fmt.Printf("当前这笔交易中有被消耗过的output!\n")
+					for _, index := range spentUTXO[string(key)] {
+						if index == int64(i) {
+							continue OUTPUT
+						}
+					}
+				}
+				if from == output.Address {
+					fmt.Printf("找到属于 %s 的output, i : %d\n", from, i)
+					// 添加到返回结构needUtxos
+					needUtxos[string(key)] = append(needUtxos[string(key)], int64(i))
+					resValue += output.Value
+
+					// 判断金额是否足够，如足够则退出
+					if resValue >= amount {
+						return needUtxos, resValue
+					}
+					// 如不足，则继续上述循环
+				}
+			}
+		}
+
+		if len(block.PreBlockHash) == 0 {
+			fmt.Printf("遍历区块链结束！\n")
+			break
+		}
+	}
+
+	return needUtxos, resValue
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/gob"
+	"fmt"
 	"log"
 )
 
@@ -37,12 +38,55 @@ func (tx *Transaction) SetTXID() {
 
 // 实现挖矿交易
 // 只有输出，没有有效输入
-func NewCoinbaseTx(miner string) *Transaction {
-	inputs := []TXInput{{nil, -1, genesisInfo}}
+func NewCoinbaseTx(miner string, data string) *Transaction {
+	inputs := []TXInput{{nil, -1, data}}
 	outputs := []TXOutput{{3.125, miner}}
 
 	tx := Transaction{nil, inputs, outputs}
 	tx.SetTXID()
 
+	return &tx
+}
+
+// 创建普通交易
+func NewTransaction(from, to string, amount float64, bc *BlockChain) *Transaction {
+	// 标识能用的utxo
+	var utxos = make(map[string][]int64)
+	// 标识这些utxo存储的金额
+	var resValue float64
+
+	// 1.遍历账本，找到属于付款人的合适的金额
+	utxos, resValue = bc.FindNeedUtxos(from, amount)
+
+	// 2.如果找到的钱不足以转账，则交易失败
+	if resValue < amount {
+		fmt.Printf("余额不足，交易失败！\n")
+		return nil
+	}
+
+	var inputs []TXInput
+	var outputs []TXOutput
+
+	// 3.将outputs转成inputs
+	for txid, indexes := range utxos {
+		for _, index := range indexes {
+			inputs = append(inputs, TXInput{[]byte(txid), index, from})
+		}
+	}
+
+	// 4.生成outputs
+	outputs = append(outputs, TXOutput{amount, to})
+
+	// 5.如果有剩余，则转给自己
+	if resValue > amount {
+		output := TXOutput{(resValue - amount), from}
+		outputs = append(outputs, output)
+	}
+
+	// 创建交易
+	tx := Transaction{nil, inputs, outputs}
+	// 设置交易id
+	tx.SetTXID()
+	// 返回交易结构
 	return &tx
 }

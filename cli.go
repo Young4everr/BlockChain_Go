@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type CLI struct {
@@ -13,6 +14,7 @@ const Usage = `
 	./blockchain addBlock "xxx"
 	./blockchain printBlock
 	./blockchain getBalance 地址
+	./blockchain send FROM TO AMOUNT MINER DATA "转账命令"
 `
 
 func (cli *CLI) Run() {
@@ -48,8 +50,22 @@ func (cli *CLI) Run() {
 		address := cmds[2]
 		cli.bc.GetMyBalance(address)
 
+	case "send":
+		if len(cmds) != 7 {
+			fmt.Printf(Usage)
+			os.Exit(1)
+		}
+		fmt.Printf("转账命令被调用\n")
+		from := cmds[2]
+		to := cmds[3]
+		amount, _ := strconv.ParseFloat(cmds[4], 64)
+		miner := cmds[5]
+		data := cmds[6]
+		cli.Send(from, to, amount, miner, data)
+
 	default:
 		fmt.Printf("无效命令，请检查！")
+		fmt.Printf(Usage)
 		os.Exit(1)
 	}
 }

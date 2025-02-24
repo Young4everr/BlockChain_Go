@@ -26,7 +26,7 @@ func (cli *CLI) printBlock() {
 
 		fmt.Printf("Difficulty : %d\n", block.Difficulty)
 		fmt.Printf("Nonce : %d\n", block.Nonce)
-		// fmt.Printf("Data : %s\n", block.Transactions[0].TXid)
+		fmt.Printf("Data : %s\n", block.Transactions[0].TXInputs[0].Address)
 		fmt.Printf("Hash : %x\n", block.Hash)
 
 		pow := NewProofOfWork(block)
@@ -36,4 +36,23 @@ func (cli *CLI) printBlock() {
 			break
 		}
 	}
+}
+
+func (cli *CLI) Send(from, to string, amount float64, miner string, data string) {
+	// 创建挖矿交易
+	coinbase := NewCoinbaseTx(miner, data)
+	txs := []*Transaction{coinbase}
+
+	// 创建普通交易
+	tx := NewTransaction(from, to, amount, cli.bc)
+	if tx != nil {
+		txs = append(txs, tx)
+	} else {
+		fmt.Printf("发现无效交易，过滤！\n")
+	}
+
+	// 添加到区块
+	cli.bc.AddBlock(txs)
+
+	fmt.Printf("挖矿成功")
 }
