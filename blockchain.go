@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/boltdb/bolt"
+	"github.com/btcsuite/btcutil/base58"
 )
 
 // v1-创建区块链，使用Block数组模拟
@@ -188,7 +190,7 @@ type UTXOInfo struct {
 // // 2. 遍历交易
 // // 3. 遍历output
 // 4. 找到属于我的output
-func (bc *BlockChain) FindMyUtxos(address string) []UTXOInfo {
+func (bc *BlockChain) FindMyUtxos(pubKeyHash []byte) []UTXOInfo {
 	fmt.Printf("FindMyUtxos\n")
 	var UTXOInfos []UTXOInfo
 
@@ -206,7 +208,8 @@ func (bc *BlockChain) FindMyUtxos(address string) []UTXOInfo {
 			if !tx.IsCoinbase() {
 				// 遍历交易输入
 				for _, input := range tx.TXInputs {
-					if input.Address == address {
+					// 判断当前被使用的input是否为目标地址所有
+					if bytes.Equal(HashPubKey(input.PubKey), pubKeyHash) {
 						fmt.Printf("找到消耗过的output! index : %d\n", input.Index)
 						spentUTXO[string(input.TXID)] = append(spentUTXO[string(input.TXID)], input.Index)
 					}
@@ -228,8 +231,7 @@ func (bc *BlockChain) FindMyUtxos(address string) []UTXOInfo {
 				}
 
 				// 找到属于我的所有output
-				if address == output.Address {
-					fmt.Printf("找到属于 %s 的output, i : %d\n", address, i)
+				if bytes.Equal(pubKeyHash, output.PubKeyHash) {
 					utxoinfo := UTXOInfo{tx.TXid, int64(i), output}
 					UTXOInfos = append(UTXOInfos, utxoinfo)
 				}
@@ -246,8 +248,10 @@ func (bc *BlockChain) FindMyUtxos(address string) []UTXOInfo {
 }
 
 func (bc *BlockChain) GetMyBalance(address string) {
+	hash := base58.Decode(address)
+	pubKeyHash := hash[1 : len(hash)-4]
 
-	utxoinfos := bc.FindMyUtxos(address)
+	utxoinfos := bc.FindMyUtxos(pubKeyHash)
 
 	var total = 0.0
 
@@ -258,12 +262,11 @@ func (bc *BlockChain) GetMyBalance(address string) {
 }
 
 // 查找合理的utxo
-func (bc *BlockChain) FindNeedUtxos(from string, amount float64) (map[string][]int64, float64) {
-
+func (bc *BlockChain) FindNeedUtxos(pubKeyHash []byte, amount float64) (map[string][]int64, float64) {
 	needUtxos := make(map[string][]int64)
 	var resValue float64
 
-	UTXOInfos := bc.FindMyUtxos(from)
+	UTXOInfos := bc.FindMyUtxos(pubKeyHash)
 	for _, utxoinfo := range UTXOInfos {
 		key := string(utxoinfo.TXID)
 		needUtxos[key] = append(needUtxos[key], utxoinfo.Index)

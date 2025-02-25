@@ -6,17 +6,45 @@ import (
 	"encoding/gob"
 	"fmt"
 	"log"
+
+	"github.com/btcsuite/btcutil/base58"
 )
 
 type TXInput struct {
-	TXID    []byte // 交易id
-	Index   int64  // output索引
-	Address string // 解锁脚本，先用地址模拟
+	TXID []byte // 交易id
+
+	Index int64 // output索引
+	// Address string // 解锁脚本，先用地址模拟
+
+	Signature []byte // 交易签名
+
+	PubKey []byte // 公钥本身，不是公钥hash
+
 }
 
 type TXOutput struct {
-	Value   float64 // 转账金额
-	Address string  // 锁定脚本
+	Value float64 // 转账金额
+	// Address string  // 锁定脚本
+
+	PubKeyHash []byte // 公钥hash，不是公钥本身
+}
+
+// 给定转账地址，得到这个地址的公钥hash，完成对output的锁定
+func (output *TXOutput) Lock(address string) {
+	// address -> public key hash
+	decodeInfo := base58.Decode(address)
+
+	pubKeyHash := decodeInfo[1 : len(decodeInfo)-4]
+
+	output.PubKeyHash = pubKeyHash
+}
+
+func NewTXOutput(value float64, address string) TXOutput {
+	output := TXOutput{Value: value}
+
+	output.Lock(address)
+
+	return output
 }
 
 type Transaction struct {
@@ -36,11 +64,17 @@ func (tx *Transaction) SetTXID() {
 	tx.TXid = hash[:]
 }
 
+// 挖矿奖励
+const reward = 3.125
+
 // 实现挖矿交易
 // 只有输出，没有有效输入
 func NewCoinbaseTx(miner string, data string) *Transaction {
-	inputs := []TXInput{{nil, -1, data}}
-	outputs := []TXOutput{{3.125, miner}}
+	inputs := []TXInput{{nil, -1, nil, []byte(data)}}
+	// outputs := []TXOutput{{3.125, miner}}
+
+	output := NewTXOutput(reward, miner)
+	outputs := []TXOutput{output}
 
 	tx := Transaction{nil, inputs, outputs}
 	tx.SetTXID()
@@ -61,13 +95,29 @@ func (tx *Transaction) IsCoinbase() bool {
 
 // 创建普通交易
 func NewTransaction(from, to string, amount float64, bc *BlockChain) *Transaction {
+	// 1. 打开钱包
+	ws := NewWallets()
+	// 获取密钥对
+	walllet := ws.WalletsMap[from]
+
+	if walllet == nil {
+		fmt.Printf("%s 的私钥不存在，交易创建失败！\n", from)
+		return nil
+	}
+
+	// 2. 获取公钥私钥
+	// privateKey := walllet.PrivateKey
+	publicKey := walllet.PublicKey
+
+	pubKeyHash := HashPubKey(publicKey)
+
 	// 标识能用的utxo
 	var utxos = make(map[string][]int64)
 	// 标识这些utxo存储的金额
 	var resValue float64
 
 	// 1.遍历账本，找到属于付款人的合适的金额
-	utxos, resValue = bc.FindNeedUtxos(from, amount)
+	utxos, resValue = bc.FindNeedUtxos(pubKeyHash, amount)
 
 	// 2.如果找到的钱不足以转账，则交易失败
 	if resValue < amount {
@@ -81,17 +131,19 @@ func NewTransaction(from, to string, amount float64, bc *BlockChain) *Transactio
 	// 3.将outputs转成inputs
 	for txid, indexes := range utxos {
 		for _, index := range indexes {
-			inputs = append(inputs, TXInput{[]byte(txid), index, from})
+			inputs = append(inputs, TXInput{[]byte(txid), index, nil, publicKey})
 		}
 	}
 
 	// 4.生成outputs
-	outputs = append(outputs, TXOutput{amount, to})
+	output := NewTXOutput(amount, to)
+	outputs = append(outputs, output)
 
 	// 5.如果有剩余，则转给自己
 	if resValue > amount {
-		output := TXOutput{(resValue - amount), from}
-		outputs = append(outputs, output)
+		// output := TXOutput{(resValue - amount), from}
+		output1 := NewTXOutput(resValue-amount, from)
+		outputs = append(outputs, output1)
 	}
 
 	// 创建交易

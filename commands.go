@@ -38,7 +38,7 @@ func (cli *CLI) PrintBlock() {
 
 		fmt.Printf("Difficulty : %d\n", block.Difficulty)
 		fmt.Printf("Nonce : %d\n", block.Nonce)
-		fmt.Printf("Data : %s\n", block.Transactions[0].TXInputs[0].Address)
+		fmt.Printf("Data : %s\n", block.Transactions[0].TXInputs[0].PubKey)
 		fmt.Printf("Hash : %x\n", block.Hash)
 
 		pow := NewProofOfWork(block)
@@ -85,8 +85,18 @@ func (cli *CLI) Send(from, to string, amount float64, miner string, data string)
 	fmt.Printf("挖矿成功")
 }
 
+// 创建钱包地址
 func (cli *CLI) CreateWallet() {
 	ws := NewWallets()
 	address := ws.CreateWallet()
 	fmt.Printf("新创建的钱包地址为：%s\n", address)
+}
+
+// 打印地址
+func (cli *CLI) ListAddresses() {
+	ws := NewWallets()
+	addresses := ws.ListAddress()
+	for _, address := range addresses {
+		fmt.Printf("address : %s\n", address)
+	}
 }
