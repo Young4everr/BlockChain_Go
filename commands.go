@@ -124,3 +124,23 @@ func (cli *CLI) ListAddresses() {
 		fmt.Printf("address : %s\n", address)
 	}
 }
+
+// 打印交易
+func (cli *CLI) PrintTX() {
+	bc := NewBlockChain()
+
+	defer bc.db.Close()
+
+	it := bc.NewIterator()
+	for {
+		block := it.Next()
+		fmt.Printf("\n+++++++++++++++block %x++++++++++++++++\n", block.Hash)
+		for _, tx := range block.Transactions {
+			fmt.Printf("tx : %v\n", tx)
+		}
+
+		if len(block.PreBlockHash) == 0 {
+			break
+		}
+	}
+}
