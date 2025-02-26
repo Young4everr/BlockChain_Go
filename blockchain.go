@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"fmt"
 	"log"
 	"os"
@@ -111,6 +112,18 @@ func NewBlockChain() *BlockChain {
 
 // 添加区块
 func (bc *BlockChain) AddBlock(txs []*Transaction) {
+	// 矿工得到交易时，第一时间对交易进行验证
+	// 矿工如果不验证，即使挖矿成功，广播区块后，其他验证矿工任然会校验每一笔交易
+	validTxs := []*Transaction{}
+	for _, tx := range txs {
+		if bc.VerifyTransaction(tx) {
+			fmt.Printf("发现有效的交易：%x\n", tx.TXid)
+			validTxs = append(validTxs, tx)
+		} else {
+			fmt.Printf("发现无效的交易：%x\n", tx.TXid)
+		}
+	}
+
 	// v1
 	// 1.创建一个区块
 	// bc.Blocks的最后一个区块的Hash值就是当前新区块的PrevBlockHash
@@ -134,7 +147,7 @@ func (bc *BlockChain) AddBlock(txs []*Transaction) {
 		}
 
 		// 创建区块
-		block := NewBlock(txs, bc.tail)
+		block := NewBlock(validTxs, bc.tail)
 		b.Put(block.Hash, block.Serialize() /*将区块序列化转化为字节流*/)
 		b.Put([]byte(lastHashKey), block.Hash)
 
@@ -278,4 +291,64 @@ func (bc *BlockChain) FindNeedUtxos(pubKeyHash []byte, amount float64) (map[stri
 	}
 
 	return needUtxos, resValue
+}
+
+func (bc *BlockChain) SignTransaction(tx *Transaction, privateKey *ecdsa.PrivateKey) {
+	// 遍历账本找到所有应用的交易
+	prevTXs := make(map[string]*Transaction)
+
+	// 遍历inputs，通过id查找所引用的交易
+	for _, input := range tx.TXInputs {
+		prevTX := bc.FindTransaction(input.TXID)
+		if prevTX == nil {
+			fmt.Printf("没有找到交易：%s\n", input.TXID)
+		} else {
+			prevTXs[string(input.TXID)] = prevTX
+		}
+	}
+
+	tx.Sign(privateKey, prevTXs)
+}
+
+func (bc *BlockChain) VerifyTransaction(tx *Transaction) bool {
+	// 挖矿交易直接返回true
+	if tx.IsCoinbase() {
+		return true
+	}
+	// 遍历账本找到所有应用的交易
+	prevTXs := make(map[string]*Transaction)
+
+	// 遍历inputs，通过id查找所引用的交易
+	for _, input := range tx.TXInputs {
+		prevTX := bc.FindTransaction(input.TXID)
+		if prevTX == nil {
+			fmt.Printf("没有找到交易：%s\n", input.TXID)
+		} else {
+			prevTXs[string(input.TXID)] = prevTX
+		}
+	}
+
+	return tx.Verify(prevTXs)
+}
+
+func (bc *BlockChain) FindTransaction(txid []byte) *Transaction {
+
+	it := bc.NewIterator()
+	// 遍历账本
+	for {
+		block := it.Next()
+		// 遍历交易
+		for _, tx := range block.Transactions {
+			if bytes.Equal(tx.TXid, txid) {
+				fmt.Printf("找到了所引用的交易：%x\n", tx.TXid)
+				return tx
+			}
+		}
+
+		if len(block.PreBlockHash) == 0 {
+			break
+		}
+	}
+
+	return nil
 }

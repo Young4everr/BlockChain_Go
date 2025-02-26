@@ -2,10 +2,14 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/gob"
 	"fmt"
 	"log"
+	"math/big"
 
 	"github.com/btcsuite/btcutil/base58"
 )
@@ -106,7 +110,7 @@ func NewTransaction(from, to string, amount float64, bc *BlockChain) *Transactio
 	}
 
 	// 2. 获取公钥私钥
-	// privateKey := walllet.PrivateKey
+	privateKey := walllet.PrivateKey
 	publicKey := walllet.PublicKey
 
 	pubKeyHash := HashPubKey(publicKey)
@@ -150,6 +154,111 @@ func NewTransaction(from, to string, amount float64, bc *BlockChain) *Transactio
 	tx := Transaction{nil, inputs, outputs}
 	// 设置交易id
 	tx.SetTXID()
+
+	// 对交易进行签名
+	bc.SignTransaction(&tx, privateKey)
+
 	// 返回交易结构
 	return &tx
+}
+
+// 第一个参数是私钥
+// 第二个参数是这个交易input所引用的所有的交易
+func (tx *Transaction) Sign(privKey *ecdsa.PrivateKey, prevTXs map[string]*Transaction) {
+	fmt.Printf("对交易进行签名！\n")
+
+	// 挖矿交易
+	if tx.IsCoinbase() {
+		return
+	}
+
+	// 1.拷贝一份交易txCopy
+	//    做相应剪裁：把每个input的Sig和pubkey设置为nil
+	//    output不做改变
+	txCopy := tx.TrimmedCopy()
+
+	// 2.遍历txCopy.inputs, 把这个inpit所引用的output的公钥hash拿过来，赋值给pubkey
+	for i, input := range txCopy.TXInputs {
+		prevTX := prevTXs[string(input.TXID)]
+		pubKeyHash := prevTX.TXOutputs[input.Index].PubKeyHash
+		txCopy.TXInputs[i].PubKey = pubKeyHash
+
+		// 3.生成要签名的数据
+		txCopy.SetTXID()
+		signData := txCopy.TXid
+
+		// 4.对数据进行签名r, s
+		r, s, err := ecdsa.Sign(rand.Reader, privKey, signData)
+		if err != nil {
+			fmt.Printf("交易签名失败，err: %v\n", err)
+		}
+
+		// 5.拼接r, s为字节流，赋值给原始的交易Signature字段
+		signature := append(r.Bytes(), s.Bytes()...)
+		tx.TXInputs[i].Signature = signature
+
+		txCopy.TXInputs[i].PubKey = nil
+	}
+}
+
+// 构造裁剪tx
+func (tx *Transaction) TrimmedCopy() Transaction {
+	var inputs []TXInput
+	var outputs []TXOutput
+
+	for _, input := range tx.TXInputs {
+		input1 := TXInput{input.TXID, input.Index, nil, nil}
+		inputs = append(inputs, input1)
+	}
+
+	outputs = tx.TXOutputs
+	tx1 := Transaction{tx.TXid, inputs, outputs}
+
+	return tx1
+
+}
+
+// 验证交易
+func (tx *Transaction) Verify(prevTXs map[string]*Transaction) bool {
+	fmt.Printf("对交易进行验证！\n")
+
+	txCopy := tx.TrimmedCopy()
+	for i, input := range tx.TXInputs {
+
+		// 构造签名数据
+		prevTX := prevTXs[string(input.TXID)]
+		pubKeyHash := prevTX.TXOutputs[input.Index].PubKeyHash
+		txCopy.TXInputs[i].PubKey = pubKeyHash
+		txCopy.SetTXID()
+		verifyData := txCopy.TXid
+		txCopy.TXInputs[i].PubKey = nil
+
+		// 还原签名r, s
+		signature := input.Signature
+		r := big.Int{}
+		s := big.Int{}
+
+		rData := signature[:len(signature)/2]
+		sData := signature[len(signature)/2:]
+		r.SetBytes(rData)
+		s.SetBytes(sData)
+
+		// 还原pubKey
+		pubKeyBytes := input.PubKey
+		x := big.Int{}
+		y := big.Int{}
+		xData := pubKeyBytes[:len(pubKeyBytes)/2]
+		yData := pubKeyBytes[len(pubKeyBytes)/2:]
+		x.SetBytes(xData)
+		y.SetBytes(yData)
+		curve := elliptic.P256()
+		publicKey := ecdsa.PublicKey{Curve: curve, X: &x, Y: &y}
+
+		// 校验
+		if !ecdsa.Verify(&publicKey, verifyData, &r, &s) {
+			return false
+		}
+	}
+
+	return true
 }

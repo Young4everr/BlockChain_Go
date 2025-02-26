@@ -8,6 +8,10 @@ import (
 
 // 创建区块链
 func (cli *CLI) CreateBlockChain(address string) {
+	if !IsValidAddress(address) {
+		fmt.Printf("%s 是无效地址！\n", address)
+		return
+	}
 	bc := CraeteBlockChain(address)
 	if bc == nil {
 		return
@@ -51,6 +55,11 @@ func (cli *CLI) PrintBlock() {
 }
 
 func (cli *CLI) GetMyBalance(address string) {
+	if !IsValidAddress(address) {
+		fmt.Printf("%s 是无效地址！\n", address)
+		return
+	}
+
 	bc := NewBlockChain()
 	if bc == nil {
 		return
@@ -61,6 +70,21 @@ func (cli *CLI) GetMyBalance(address string) {
 }
 
 func (cli *CLI) Send(from, to string, amount float64, miner string, data string) {
+	if !IsValidAddress(from) {
+		fmt.Printf("%s 是无效地址！\n", from)
+		return
+	}
+
+	if !IsValidAddress(to) {
+		fmt.Printf("%s 是无效地址！\n", to)
+		return
+	}
+
+	if !IsValidAddress(miner) {
+		fmt.Printf("%s 是无效地址！\n", miner)
+		return
+	}
+
 	bc := NewBlockChain()
 	if bc == nil {
 		return
